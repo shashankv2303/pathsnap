@@ -270,6 +270,8 @@ Laptop 1 server passed for health (ready/model_loaded true, development mode,
 GPS/route map and OpenStreetMap tiles with zero console errors. Coordinates
 were checked as longitude/latitude at the API and latitude/longitude in Folium.
 The first LAN attempt timed out; a retry after the user checked Laptop 1 worked.
-Laptop 1 console logging is not directly observable from Laptop 2; confirmation
-must be made on Laptop 1. This is development testing, not official evaluator
+The user supplied Laptop 1 logs confirming the Laptop 2 client IP, successful
+health/trip requests, and structured SUCCESS prediction entries for both trips,
+including timings, accuracy, continuity and `hmm=True`.
+This is development testing, not official evaluator
 testing. Machine-specific LAN addresses remain runtime settings.
