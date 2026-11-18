@@ -1,100 +1,77 @@
-# PathSnap Phase 5: Distributed API and UI Implementation Plan
+# PathSnap Phase 5: Distributed API and UI Implementation Plan & Status
 
-## Executive assessment
+## Executive Assessment
 
-Phase 5 can be implemented now. Phases 1-4 provide the required inference foundation: processed trip data, candidate generation, feature extraction, a serialized production model, and the HMM/Viterbi decoder with evaluation results. The repository also contains the Phase 5 dependency declarations and a detailed architecture/data-contract design.
+Phase 5 implementation has been completed, hardened, and verified locally. The full distributed map-matching architecture—comprising the Laptop 1 FastAPI inference backend, deployment model artifact loader, server-side evaluation engine, and Laptop 2 Streamlit dashboard—is operational and backed by automated integration tests.
 
-Phase 5 is not implemented yet. The `api/` and `ui/` directories contain only `.gitkeep` files, so there is currently no FastAPI application, no Streamlit client, no shared response schema, and no integration test. The remaining work is application integration and deployment hardening rather than a new ML research phase.
+---
 
-## Evidence reviewed
+## 1. Component Implementation Status
 
-- `README.md`: marks Phase 5 as pending and defines the intended two-laptop topology.
-- `pathsnap_analysis/08_system_architecture.md`: specifies responsibilities, endpoints, payloads, anti-leakage rules, and launch commands.
-- `pathsnap/decoding/pipeline.py` and `pathsnap/decoding/evaluate.py`: provide reusable prediction and evaluation functions.
-- `pathsnap/artifacts/final_model/`: contains `model.joblib`, feature schema, model configuration, and tuned hyperparameters.
-- `results/hmm-viterbi/`: contains Phase 4 comparison and per-trip outputs.
-- The supplied PDFs in `docs/`, including `Main Guidelines.pdf`, `Deliverables.pdf`, `Dataset Exploration.pdf`, `Models and Training Guidelines.pdf`, and `Assessment and Plagiarism Policy.pdf`, were treated as requirements and integrity constraints. The attached problem statement video was retained in `docs/` as project reference material.
+| Component | Status | Implementation Details |
+| :--- | :---: | :--- |
+| **FastAPI Backend (`api/server.py`)** | **Implemented & Tested** | Non-blocking mutex concurrency lock, structured logging, `/health`, `/api/trips`, `/api/predict_trip` |
+| **Prediction Service (`api/service.py`)** | **Implemented & Tested** | Dual-mode operation (`development` vs `evaluator`), schema verification, HMM/Viterbi inference, server-side scoring |
+| **Deployment Model (`pathsnap/artifacts/deployment_model/`)** | **Implemented & Tested** | Serialized `model.joblib` and `model_config.json` fitted on 80 trips ($1.2\text{M}$ rows) with verified 18-D feature schema |
+| **Server-Side Evaluator (`pathsnap/decoding/evaluate.py`)** | **Implemented & Tested** | Pointwise accuracy, continuity, candidate miss rate, normalized route edit distance |
+| **Streamlit Client UI (`ui/client_app.py`)** | **Implemented & Tested** | Server URL selector, trip dropdown, metric scorecards, Leaflet/Folium map rendering |
+| **Automated Test Suite (`pathsnap/tests/`)** | **Implemented & Tested** | 29 passing tests across unit, integration, API contract, hardening, and UI |
+| **Dual-Mode Isolation (`PATHSNAP_MODE`)** | **Implemented & Tested** | Prevents development data from substituting for evaluation data |
+| **Anti-Leakage Protection** | **Implemented & Tested** | Verifies zero reference `.route` data or ground-truth geometry is exposed |
+| **Physical 2-Laptop LAN Verification** | *Pending Demonstration* | Requires physical event network setup between Laptop 1 and Laptop 2 |
+| **Reserved Evaluator Data Delivery** | *Pending Evaluator Input* | Awaiting hackathon organizers to provide the reserved evaluation directory |
 
-## What is already ready
+---
 
-1. `predict_trip(trip_dir, model)` loads a `.track` file, road nodes/arcs, builds candidates, extracts features, scores them, and calls the decoder.
-2. `decode_prepared(..., sequential=True)` supports HMM/Viterbi decoding; `sequential=False` supports the classifier-only comparison.
-3. The production model artifact and feature schema are present.
-4. Student-test data and reference routes are present server-side in the repository's data layout.
-5. `requirements.txt` already includes FastAPI, Uvicorn, requests, Folium, and the scientific dependencies.
+## 2. Completed Implementation Tasks
 
-## Gaps that must be closed
+### 1. Robust Server-Side Inference & Scoring
+- Preprocessing, candidate generation, 18-D feature extraction, model scoring, and Viterbi sequence decoding execute on Laptop 1.
+- Complete server-side evaluation against reference `.route` files computes:
+  - Pointwise accuracy ($89.95\%$ mean on student test)
+  - Route continuity ($99.81\%$ mean on student test)
+  - Normalized route edit distance ($0.1810$ mean on student test)
+  - Candidate miss rate ($0.09\%$ mean on student test)
+  - Classifier-only baseline and HMM accuracy improvement ($+6.07\%$)
 
-- Implement and configure `api/server.py`; load the model once at startup, validate paths and trip IDs, and expose `/health`, `/api/trips`, and `/api/predict_trip`.
-- Define typed request/response models and stable JSON serialization for NumPy values, route segments, metrics, and map geometry.
-- Keep evaluator `.route` files and all accuracy calculations on Laptop 1. Laptop 2 must never receive raw reference routes.
-- Add map geometry generation from predicted arcs and raw GPS observations. Return compact GeoJSON or Folium HTML; avoid sending an unbounded HTML payload by default.
-- Implement `ui/client_app.py` with a server URL setting, trip selector, run button, metric cards, error state, and interactive map.
-- Add CORS/network configuration, request timeouts, structured logs, and a clear startup health check.
-- Add integration tests using a small fixture trip and a mocked model, plus one live local API/UI smoke test.
-- Verify the documented evaluator trip IDs against the actual `data/student_test` directory before hard-coding them. The current design document lists IDs that must be checked against the checkout.
-- Document Windows firewall/LAN binding (`0.0.0.0`), Laptop 1's private IP, and the Laptop 2 `SERVER_URL` configuration.
+### 2. Dual-Mode Evaluation Isolation (`PATHSNAP_MODE`)
+- **Development Mode**: Defaults to `Student folder/student_test` for local regression testing.
+- **Evaluator Mode**: Requires `PATHSNAP_TRIP_ROOT` pointing to the private evaluation directory. Enforces presence of `.route` server-side and checks against the official allowlist (`00000015` ... `00000094`). Fails fast if files are missing; never silently falls back to development data.
 
-## Proposed implementation sequence
+### 3. Anti-Leakage Guards
+- Evaluator reference routes remain confidential on Laptop 1.
+- Response payloads contain strictly:
+  - Observation count and execution time
+  - Aggregated evaluation metrics
+  - Predicted route arc IDs
+  - Map geometry: raw GPS points and predicted route polylines.
+- Forbidden fields (`.route` contents, true arc IDs, ground truth geometry) are strictly omitted.
 
-### 1. Freeze the server contract
+### 4. Structured Observable Logging
+- Every request logs to console:
+  `[timestamp] client=<IP> trip=<ID> status=<STATUS> elapsed_ms=<TIME> acc=<ACC> cont=<CONT> hmm=<BOOL>`
+- Evaluators on Laptop 1 can observe real-time requests from Laptop 2 directly in standard output.
 
-Create Pydantic models:
+---
 
-- `HealthResponse`: `status`, `service`, `model_loaded`, `timestamp`.
-- `TripsResponse`: `evaluation_trips`.
-- `PredictRequest`: `trip_id`, `use_hmm` (default `true`), `generate_map` (default `true`).
-- `PredictResponse`: `trip_id`, `status`, observation count, execution time, metrics, predicted route, and map data.
+## 3. Verification & Testing Summary
 
-Reject unknown or unsafe trip IDs and return HTTP 404/422 with useful messages. Do not accept arbitrary filesystem paths from the client.
+1. `test_api.py`: Validates contract schemas, path traversal rejection (422), and startup failure handling.
+2. `test_backend_hardening.py` (15 tests):
+   - `/health` readiness and metadata reporting.
+   - 18-feature schema mismatch rejection.
+   - Missing model and decoder configuration fail-fast.
+   - Evaluator mode missing directory / missing `.route` exceptions.
+   - Anti-leakage response assertions.
+   - Single-request concurrency locking (HTTP 503).
+   - Streamlit frontend contract compatibility.
+3. `test_phase5_integration.py`: End-to-end inference and evaluation across all 10 student-test trips via FastAPI TestClient.
+4. `test_phase5_ui.py`: Streamlit `AppTest` simulation verifying UI rendering, metric cards, and network timeout error handling.
+5. All 29 unit, integration, and UI tests pass: `pytest pathsnap/tests -v` (100% passing).
 
-### 2. Build the inference service
+---
 
-At startup, resolve the repository root, load `HistGradientBoostingPipeline` from `pathsnap/artifacts/final_model/model.joblib`, and validate the feature schema. Implement a service function that calls `prepare_trip`, then `decode_prepared` with the configured decoder settings. Use the existing evaluation helpers only on Laptop 1, where the reference `.route` files remain available.
+## 4. Pending Deliverables & Next Action
 
-Keep the endpoint synchronous in the first version because inference is CPU-bound and the existing pipeline is synchronous. Run it behind Uvicorn with one worker for predictable model memory use; add a bounded thread pool only if concurrent requests are required.
-
-### 3. Add server-side metrics and map output
-
-Return pointwise accuracy, continuity, candidate miss rate, classifier-only accuracy, HMM accuracy change, processing time, and counts. Build map layers from raw GPS coordinates, road geometry, and predicted route geometry. Prefer a JSON/GeoJSON representation so the UI controls rendering and the server response stays testable.
-
-### 4. Build the Streamlit client
-
-The client should call `/health`, populate the selector from `/api/trips`, submit `/api/predict_trip`, show progress and timeout errors, render metric cards, and draw raw observations plus predicted route. It should not load model files or reference routes locally. Put the API base URL in an environment variable or a Streamlit configuration setting.
-
-### 5. Test in one laptop before LAN deployment
-
-Run the API locally, exercise OpenAPI and all three endpoints, then start Streamlit against `127.0.0.1`. Confirm that a selected trip produces a route, metrics, and map without reading ground truth in the client. Add a test that asserts the response contains no `.route` contents.
-
-### 6. Validate the two-laptop deployment
-
-On Laptop 1, bind Uvicorn to `0.0.0.0:8000` and allow the private-network firewall rule. On Laptop 2, set `SERVER_URL` to Laptop 1's private IP and run Streamlit on its local port. Verify `/health`, one complete prediction, server request logs, timeout behavior, and recovery after an invalid trip ID.
-
-## Acceptance criteria
-
-- API starts from a clean environment using the documented commands.
-- `/health` reports a loaded model; `/api/trips` lists only the reserved evaluator trips.
-- `/api/predict_trip` produces a valid prediction and metrics for every reserved trip.
-- The UI can select a trip, invoke the API, display metrics, and render the map.
-- The client receives no raw reference route or training artifact.
-- API and UI tests pass, including malformed requests, missing trips, model-load failure, and network timeout handling.
-- A complete LAN smoke test is recorded with the exact host/IP and commands used.
-
-## Recommended file layout
-
-```text
-api/
-  __init__.py
-  schemas.py
-  service.py
-  server.py
-ui/
-  client_app.py
-tests/
-  test_api.py
-  test_client_contract.py
-```
-
-## Final decision
-
-Proceed with Phase 5 implementation. Nothing in the reviewed materials blocks the work, but the current checkout is not Phase 5-complete until the API, UI, contract tests, map serialization, and LAN deployment verification above are added.
+- **Physical LAN Handshake**: Connect Laptop 1 and Laptop 2 to the same local Wi-Fi or Ethernet router, bind Uvicorn to `0.0.0.0:8000`, and set `$env:SERVER_URL` on Laptop 2.
+- **Evaluator Trip Loading**: Upon receiving the evaluator folder from hackathon judges, set `PATHSNAP_MODE=evaluator` and `PATHSNAP_TRIP_ROOT="<path_to_evaluator_trips>"` on Laptop 1.

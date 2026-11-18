@@ -320,6 +320,29 @@ per-trip results, and predicted assignments and route segments. For serving,
 `pathsnap.decoding.pipeline.predict_trip` uses the track and road-network files.
 The evaluation command loads reference routes separately after prediction.
 
+### 7. Launch Laptop 1 Model Server (Backend & Evaluation Authority)
+
+```bash
+# Development Mode (uses Student folder/student_test):
+$env:PATHSNAP_MODE="development"
+python -m uvicorn api.server:app --host 0.0.0.0 --port 8000
+
+# Evaluator Mode (strictly requires reserved evaluator trip directory):
+$env:PATHSNAP_MODE="evaluator"
+$env:PATHSNAP_TRIP_ROOT="C:\path\to\reserved_evaluator_trips"
+python -m uvicorn api.server:app --host 0.0.0.0 --port 8000
+```
+
+### 8. Launch Laptop 2 Client (Evaluator Dashboard)
+
+```bash
+# Point client to Laptop 1's private LAN IP:
+$env:SERVER_URL="http://<LAPTOP1_PRIVATE_IP>:8000"
+python -m streamlit run ui/client_app.py
+```
+
+See [Phase 5 deployment documentation](docs/PHASE5_DEPLOYMENT.md) for full network configuration, Windows Firewall rules, and anti-leakage architecture.
+
 ---
 
 ## 14. Testing & Quality Assurance
