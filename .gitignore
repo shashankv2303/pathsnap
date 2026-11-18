@@ -43,3 +43,10 @@ problem_statement_audio.wav
 .env
 *.key
 *.pem
+
+# Private Evaluator Ground-Truth Data (Laptop 1 Server-Side Only; Never Commit)
+evaluator/
+evaluator_data/
+evaluator_test/
+evaluation_data/
+*evaluator_trips*/
