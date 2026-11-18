@@ -1,0 +1,33 @@
+{
+  "input_features": [
+    "dist_perp",
+    "arc_length",
+    "proj_ratio",
+    "gps_displacement",
+    "dist_margin",
+    "road_bearing",
+    "gps_bearing",
+    "angular_diff",
+    "heading_cos",
+    "dt_sec",
+    "speed_mps",
+    "accel_mps2",
+    "is_connected_prev",
+    "net_to_euc_ratio",
+    "target_out_degree",
+    "spatial_likelihood",
+    "cand_rank",
+    "cand_rel_dist"
+  ],
+  "training_trips": 80,
+  "training_samples": 1208139,
+  "sklearn_version": "1.9.0",
+  "hyperparameters": {
+    "learning_rate": 0.04195308906464341,
+    "max_iter": 160,
+    "max_leaf_nodes": 29,
+    "min_samples_leaf": 30,
+    "l2_regularization": 0.3385226783451977,
+    "class_weight": "balanced"
+  }
+}

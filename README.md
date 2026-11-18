@@ -368,4 +368,7 @@ flowchart LR
 | **Phase 3: Production Model Export** | **COMPLETED** | Serialized `model.joblib`, schema, and hyperparameters in `artifacts/final_model/` |
 | **Geographical Visualisation (Folium)** | **COMPLETED** | Multi-layer interactive maps and PNG screenshots for trips `00000000` and `00000001` |
 | **Phase 4: HMM & Viterbi Decoder** | **COMPLETED** | Classifier-only versus decoded comparison on all ten student-test trips |
-| **Phase 5: Distributed API & UI (Laptop 1/2)** | *Pending* | FastAPI server and Streamlit evaluator dashboard in upcoming deployment sprint |
+| **Phase 5: Distributed API & UI (Laptop 1/2)** | **IMPLEMENTED** | FastAPI server, Streamlit evaluator client, deployment artifact and integration tests; physical two-laptop LAN verification remains |
+
+See [Phase 5 deployment instructions](docs/PHASE5_DEPLOYMENT.md) for commands,
+environment settings, and the deployment-model compatibility repair.
