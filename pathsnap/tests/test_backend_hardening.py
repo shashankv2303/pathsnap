@@ -120,28 +120,85 @@ def test_evaluator_mode_missing_directory_raises(tmp_path):
         PredictionService(mode="evaluator", trip_root=str(missing_dir))
 
 
-def test_evaluator_mode_trip_discovery_and_missing_route(tmp_path):
-    """Verify evaluator mode enforces .route requirement and allowlist matching."""
-    eval_root = tmp_path / "evaluator_data"
-    eval_root.mkdir()
+def _create_synthetic_evaluator_dataset(base_dir: Path, omit_trip: Optional[str] = None, omit_file: Optional[tuple[str, str]] = None, empty_file: Optional[tuple[str, str]] = None):
+    """Helper to create a synthetic 10-trip evaluator dataset fixture."""
+    base_dir.mkdir(parents=True, exist_ok=True)
+    for tid in EVALUATOR_ALLOWLIST:
+        if omit_trip and tid == omit_trip:
+            continue
+        tdir = base_dir / tid
+        tdir.mkdir(parents=True, exist_ok=True)
+        for ext in (".track", ".nodes", ".arcs", ".route"):
+            if omit_file and omit_file == (tid, ext):
+                continue
+            f = tdir / f"{tid}{ext}"
+            if empty_file and empty_file == (tid, ext):
+                f.write_text("", encoding="utf-8")
+            else:
+                f.write_text(f"dummy content for {tid}{ext}", encoding="utf-8")
 
-    # Create evaluator trip 00000015 without .route
-    t15 = eval_root / "00000015"
-    t15.mkdir()
-    (t15 / "00000015.track").write_text("track", encoding="utf-8")
-    (t15 / "00000015.nodes").write_text("nodes", encoding="utf-8")
-    (t15 / "00000015.arcs").write_text("arcs", encoding="utf-8")
 
-    # Initializing PredictionService must fail fast because .route is missing
-    with pytest.raises(RuntimeError, match="Missing .route file in trip: 00000015"):
+def test_evaluator_mode_accepts_valid_ten_trips(tmp_path):
+    """Verify evaluator mode accepts a complete, valid ten-trip dataset."""
+    eval_root = tmp_path / "valid_evaluator_data"
+    _create_synthetic_evaluator_dataset(eval_root)
+    service = PredictionService(trip_root=str(eval_root), mode="evaluator")
+    assert service.is_ready()
+    discovered = service.trips()
+    assert discovered == sorted(EVALUATOR_ALLOWLIST)
+    assert len(discovered) == 10
+
+
+def test_evaluator_mode_rejects_missing_allowlisted_trip(tmp_path):
+    """Verify evaluator mode fails fast if any allowlisted trip directory is missing."""
+    eval_root = tmp_path / "missing_trip_eval"
+    _create_synthetic_evaluator_dataset(eval_root, omit_trip="00000094")
+    with pytest.raises(RuntimeError, match="requires all 10 allowlisted trips, but the following are missing"):
         PredictionService(trip_root=str(eval_root), mode="evaluator")
 
-    # Now add the .route file and verify initialization succeeds
-    (t15 / "00000015.route").write_text("100\n101\n", encoding="utf-8")
+
+def test_evaluator_mode_rejects_unexpected_extra_trip(tmp_path):
+    """Verify evaluator mode fails fast if an unknown 8-digit trip directory exists."""
+    eval_root = tmp_path / "extra_trip_eval"
+    _create_synthetic_evaluator_dataset(eval_root)
+    extra = eval_root / "00000099"
+    extra.mkdir()
+    (extra / "00000099.track").write_text("data", encoding="utf-8")
+    with pytest.raises(ValueError, match="Unexpected trip directories found in evaluator root"):
+        PredictionService(trip_root=str(eval_root), mode="evaluator")
+
+
+@pytest.mark.parametrize("ext", [".track", ".nodes", ".arcs", ".route"])
+def test_evaluator_mode_rejects_missing_required_files(tmp_path, ext):
+    """Verify evaluator mode fails fast if any required file is missing from any trip."""
+    eval_root = tmp_path / f"missing_{ext.strip('.')}_eval"
+    _create_synthetic_evaluator_dataset(eval_root, omit_file=("00000015", ext))
+    with pytest.raises(RuntimeError, match=f"requires server-side {ext} file for trip '00000015'"):
+        PredictionService(trip_root=str(eval_root), mode="evaluator")
+
+
+@pytest.mark.parametrize("ext", [".track", ".nodes", ".arcs", ".route"])
+def test_evaluator_mode_rejects_empty_required_files(tmp_path, ext):
+    """Verify evaluator mode fails fast if any required file is empty."""
+    eval_root = tmp_path / f"empty_{ext.strip('.')}_eval"
+    _create_synthetic_evaluator_dataset(eval_root, empty_file=("00000017", ext))
+    with pytest.raises(RuntimeError, match=f"requires non-empty {ext} file for trip '00000017'"):
+        PredictionService(trip_root=str(eval_root), mode="evaluator")
+
+
+def test_evaluator_mode_api_endpoint_allowlist(tmp_path):
+    """Verify GET /api/trips returns exactly the 10 authorized evaluator IDs."""
+    eval_root = tmp_path / "api_eval_data"
+    _create_synthetic_evaluator_dataset(eval_root)
     service = PredictionService(trip_root=str(eval_root), mode="evaluator")
-    trips = service.trips()
-    assert trips == ["00000015"]
-    assert "00000015" in EVALUATOR_ALLOWLIST
+    with TestClient(create_app(service)) as client:
+        res = client.get("/api/trips")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["evaluation_trips"] == sorted(EVALUATOR_ALLOWLIST)
+        assert data["trips"] == sorted(EVALUATOR_ALLOWLIST)
+        assert data["trip_count"] == 10
+        assert data["mode"] == "evaluator"
 
 
 def test_evaluator_mode_rejects_student_folder():

@@ -139,9 +139,43 @@ class PredictionService:
         return self.model is not None and self.config is not None
 
     def trips(self) -> List[str]:
-        """Discovers valid trip directories based on mode and file availability."""
+        """Discovers and strictly validates trip directories based on mode."""
         if not self.trip_root.exists():
             return []
+
+        if self.mode == 'evaluator':
+            # 1. Enforce no unexpected 8-digit trip directories
+            all_dirs = [p.name for p in self.trip_root.iterdir() if p.is_dir() and not p.is_symlink()]
+            eight_digit_dirs = [d for d in all_dirs if len(d) == 8 and d.isdigit() and d.isascii()]
+            unexpected = set(eight_digit_dirs) - EVALUATOR_ALLOWLIST
+            if unexpected:
+                raise ValueError(
+                    f"Unexpected trip directories found in evaluator root: {sorted(unexpected)}. "
+                    "Evaluator mode only permits the official 10 allowlisted trips."
+                )
+
+            # 2. Enforce all 10 allowlisted trips must exist
+            missing_trips = EVALUATOR_ALLOWLIST - set(eight_digit_dirs)
+            if missing_trips:
+                raise RuntimeError(
+                    f"Evaluator mode requires all 10 allowlisted trips, but the following are missing: {sorted(missing_trips)}"
+                )
+
+            # 3. Enforce each trip has all 4 non-empty required files
+            for tid in sorted(EVALUATOR_ALLOWLIST):
+                tdir = self.trip_root / tid
+                for ext in ('.track', '.nodes', '.arcs', '.route'):
+                    f = tdir / f"{tid}{ext}"
+                    if not f.is_file():
+                        raise RuntimeError(
+                            f"Evaluator mode requires server-side {ext} file for trip '{tid}'. Missing file: {f.name}"
+                        )
+                    if f.stat().st_size == 0:
+                        raise RuntimeError(
+                            f"Evaluator mode requires non-empty {ext} file for trip '{tid}'. Empty file: {f.name}"
+                        )
+
+            return sorted(EVALUATOR_ALLOWLIST)
 
         candidates = [
             p.name
@@ -153,26 +187,6 @@ class PredictionService:
             and not p.is_symlink()
             and all((p / (p.name + ext)).is_file() for ext in ('.track', '.nodes', '.arcs'))
         ]
-
-        if self.mode == 'evaluator':
-            # In evaluator mode, all valid evaluator trips must have server-side .route files
-            evaluator_trips = []
-            for tid in sorted(candidates):
-                p = self.trip_root / tid
-                route_file = p / (tid + '.route')
-                if not route_file.is_file():
-                    raise RuntimeError(
-                        f"Evaluator mode requires server-side ground truth (.route) for all evaluator trips. "
-                        f"Missing .route file in trip: {tid}"
-                    )
-                evaluator_trips.append(tid)
-
-            # If matching allowlist, restrict to official evaluator IDs
-            matching_allowlist = [t for t in evaluator_trips if t in EVALUATOR_ALLOWLIST]
-            if matching_allowlist:
-                return sorted(matching_allowlist)
-            return sorted(evaluator_trips)
-
         return sorted(candidates)
 
     def predict(
