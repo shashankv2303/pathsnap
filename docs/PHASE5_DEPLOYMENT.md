@@ -50,12 +50,15 @@ flowchart LR
 - Python 3.9+ with `requirements.txt` installed.
 - Windows 11 / Linux with private network connectivity.
 
-### Environment Modes (`PATHSNAP_MODE`)
+### Environment Modes (`PATHSNAP_MODE`) & Variables
 
-| Mode | Environment Variables | Behavior & Data Source |
-| :--- | :--- | :--- |
-| **Development** *(Default)* | `PATHSNAP_MODE=development`<br>`PATHSNAP_TRIP_ROOT="Student folder/student_test"` | Discovers 10 development trips (`00000000`, `00000007`, etc.). Calculates accuracy if local `.route` exists. |
-| **Evaluator** | `PATHSNAP_MODE=evaluator`<br>`PATHSNAP_TRIP_ROOT="C:\PathSnap\private_evaluator_data"` | Strictly requires `PATHSNAP_TRIP_ROOT` containing the 10 reserved evaluator trips (`00000015`...`00000094`). Requires `.route` server-side. Fails fast with clear configuration error if directory or `.route` is missing. **Never falls back to development data.** |
+| Variable | Default Value | Production Evaluator Value | Purpose |
+| :--- | :--- | :--- | :--- |
+| `PATHSNAP_MODE` | `development` | `evaluator` | `evaluator` strictly requires reserved evaluation trips and fails fast if `.route` is missing. |
+| `PATHSNAP_TRIP_ROOT` | `Student folder/student_test` | `C:\path\to\official_evaluator_folder` | Path to trip directories. In evaluator mode, never points to student data. |
+| `PATHSNAP_MODEL_PATH` | `pathsnap/artifacts/deployment_model/model.joblib` | *(keep default)* | Path to saved HistGradientBoostingClassifier. (Legacy `PATHSNAP_MODEL` also accepted). |
+| `PATHSNAP_CONFIG_PATH` | `pathsnap/artifacts/deployment_model/model_config.json` | *(keep default)* | Path to 18-feature schema configuration. |
+| `PATHSNAP_DECODER_CONFIG`| `results/hmm-viterbi/decoder_config.json` | *(keep default)* | Path to Viterbi decoder configuration. |
 
 ### Step-by-Step Laptop 1 Deployment
 
@@ -64,7 +67,7 @@ flowchart LR
    python -m pip install -r requirements.txt
    ```
 
-2. **Discover Laptop 1 Private IP Address**:
+2. **Discover Laptop 1 Private IPv4 Address**:
    - In PowerShell:
      ```powershell
      (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" -and $_.IPAddress -notlike "169.254*" }).IPAddress
@@ -80,19 +83,20 @@ flowchart LR
 4. **Launch Model Server**:
    - **For Development Mode**:
      ```powershell
-     $env:PATHSNAP_MODE="development"
+     $env:PATHSNAP_MODE = "development"
+     $env:PATHSNAP_TRIP_ROOT = "Student folder\student_test"
      python -m uvicorn api.server:app --host 0.0.0.0 --port 8000
      ```
    - **For Evaluator Demonstration Mode**:
      ```powershell
-     $env:PATHSNAP_MODE="evaluator"
-     $env:PATHSNAP_TRIP_ROOT="C:\path\to\reserved_evaluator_trips"
+     $env:PATHSNAP_MODE = "evaluator"
+     $env:PATHSNAP_TRIP_ROOT = "C:\path\to\official_evaluator_folder"
      python -m uvicorn api.server:app --host 0.0.0.0 --port 8000
      ```
 
 5. **Verify Local Readiness**:
    - Health check: `curl http://127.0.0.1:8000/health`
-   - Swagger Documentation: open `http://127.0.0.1:8000/docs` in a browser.
+   - Interactive OpenAPI documentation: open `http://127.0.0.1:8000/docs` in a browser.
 
 ---
 
@@ -125,18 +129,24 @@ Returns server readiness, operating mode, and discovered trip counts:
 {
   "status": "healthy",
   "service": "PathSnap",
+  "ready": true,
   "model_loaded": true,
   "mode": "evaluator",
   "trip_count": 10,
+  "trips_count": 10,
   "timestamp": "2026-11-18T16:00:00.000000Z"
 }
 ```
 
 ### `GET /api/trips`
-Returns the allowlisted evaluation trips:
+Returns the allowlisted evaluation trips (provides both `evaluation_trips` and `trips` for universal client compatibility):
 ```json
 {
   "evaluation_trips": [
+    "00000015", "00000017", "00000023", "00000030", "00000049",
+    "00000059", "00000067", "00000073", "00000087", "00000094"
+  ],
+  "trips": [
     "00000015", "00000017", "00000023", "00000030", "00000049",
     "00000059", "00000067", "00000073", "00000087", "00000094"
   ],
@@ -161,6 +171,7 @@ Returns the allowlisted evaluation trips:
     "status": "success",
     "num_gps_observations": 1840,
     "execution_time_ms": 342.5,
+    "execution_time_seconds": 0.3425,
     "metrics": {
       "reference_available": true,
       "pointwise_accuracy": 0.9412,
@@ -176,9 +187,11 @@ Returns the allowlisted evaluation trips:
       "eligible_transitions": 1839,
       "connected_transitions": 1818,
       "breaks": 3,
-      "backend_processing_time_ms": 342.5
+      "backend_processing_time_ms": 342.5,
+      "execution_time_seconds": 0.3425
     },
     "predicted_route": [1420, 1420, 1420, 3105, 3105, 8912],
+    "matched_sequence": [1420, 1420, 1420, 3105, 3105, 8912],
     "map_data": {
       "gps": [[77.5946, 12.9716], [77.5947, 12.9718]],
       "route_segments": [
@@ -187,6 +200,12 @@ Returns the allowlisted evaluation trips:
     }
   }
   ```
+
+### Client Error Responses & Handling
+- **HTTP 503 (`Service Unavailable`)**: Returned when the server is actively computing a previous trip. Streamlit clients should pause for 1-2 seconds and retry.
+- **HTTP 404 (`Not Found`)**: Returned if the requested 8-digit trip ID is not in the discovered/allowlisted trips.
+- **HTTP 422 (`Unprocessable Entity`)**: Returned if payload validation fails (e.g., malformed trip ID regex).
+- **Client Timeout**: Recommend setting `timeout=(5, 300)` on Laptop 2 requests to accommodate long Viterbi decodings without socket drop.
 
 ---
 

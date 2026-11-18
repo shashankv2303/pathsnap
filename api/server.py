@@ -32,22 +32,27 @@ class PredictResponse(BaseModel):
     status: str
     num_gps_observations: int
     execution_time_ms: float
+    execution_time_seconds: Optional[float] = None
     metrics: Dict[str, Any]
     predicted_route: List[Optional[int]]
+    matched_sequence: Optional[List[Optional[int]]] = None
     map_data: Optional[MapData] = None
 
 
 class HealthResponse(BaseModel):
     status: str
-    service: str
-    model_loaded: bool
+    service: str = "PathSnap"
+    ready: bool = True
+    model_loaded: bool = True
     mode: str
     trip_count: int
+    trips_count: int = 0
     timestamp: str
 
 
 class TripsResponse(BaseModel):
     evaluation_trips: List[str]
+    trips: List[str] = Field(default_factory=list)
     mode: str
     trip_count: int
 
@@ -87,21 +92,26 @@ def create_app(service: Optional[Any] = None) -> FastAPI:
             return HealthResponse(
                 status="unhealthy",
                 service="PathSnap",
+                ready=False,
                 model_loaded=False,
                 mode="unknown",
                 trip_count=0,
+                trips_count=0,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
         is_loaded = getattr(srv, "is_ready", lambda: True)()
         mode = getattr(srv, "mode", "unknown")
         trips_list = srv.trips()
+        count = len(trips_list)
         return HealthResponse(
             status="healthy" if is_loaded else "degraded",
             service="PathSnap",
+            ready=bool(is_loaded),
             model_loaded=bool(is_loaded),
             mode=mode,
-            trip_count=len(trips_list),
+            trip_count=count,
+            trips_count=count,
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -115,10 +125,12 @@ def create_app(service: Optional[Any] = None) -> FastAPI:
             )
         trip_ids = srv.trips()
         mode = getattr(srv, "mode", "unknown")
+        count = len(trip_ids)
         return TripsResponse(
             evaluation_trips=trip_ids,
+            trips=trip_ids,
             mode=mode,
-            trip_count=len(trip_ids),
+            trip_count=count,
         )
 
     @app.post("/api/predict_trip", response_model=PredictResponse)

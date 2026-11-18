@@ -34,8 +34,9 @@ class PredictionService:
         self,
         trip_root: Optional[Union[str, Path]] = None,
         model_path: Optional[Union[str, Path]] = None,
-        mode: Optional[str] = None,
+        config_path: Optional[Union[str, Path]] = None,
         decoder_config_path: Optional[Union[str, Path]] = None,
+        mode: Optional[str] = None,
     ):
         # 1. Mode Configuration
         raw_mode = (mode or os.getenv('PATHSNAP_MODE', 'development')).lower().strip()
@@ -66,9 +67,9 @@ class PredictionService:
             if 'student_test' in normalized_str or (
                 'student folder' in normalized_str and 'train' in normalized_str
             ):
-                log.warning(
-                    "PATHSNAP_MODE is evaluator, but trip_root points to development data: %s",
-                    self.trip_root,
+                raise ValueError(
+                    f"PATHSNAP_MODE is set to 'evaluator', but PATHSNAP_TRIP_ROOT points to student development data: {self.trip_root}. "
+                    "Evaluator mode requires an explicit path to the reserved evaluation trips."
                 )
         else:
             default_dev_root = str(ROOT / 'Student folder/student_test')
@@ -81,11 +82,15 @@ class PredictionService:
 
         # 3. Model Loading & Verification
         default_model = str(ROOT / 'pathsnap/artifacts/deployment_model/model.joblib')
-        model_file = Path(model_path or os.getenv('PATHSNAP_MODEL', default_model)).resolve()
+        env_model = os.getenv('PATHSNAP_MODEL_PATH') or os.getenv('PATHSNAP_MODEL')
+        model_file = Path(model_path or env_model or default_model).resolve()
         if not model_file.is_file():
             raise FileNotFoundError(f"Model artifact not found at: {model_file}")
 
-        config_file = model_file.with_name('model_config.json')
+        env_config = os.getenv('PATHSNAP_CONFIG_PATH')
+        config_file = Path(
+            config_path or env_config or model_file.with_name('model_config.json')
+        ).resolve()
         if not config_file.is_file():
             raise FileNotFoundError(f"Model configuration file not found at: {config_file}")
 
@@ -274,7 +279,9 @@ class PredictionService:
             }
 
         elapsed_ms = (perf_counter() - start) * 1000.0
+        elapsed_sec = elapsed_ms / 1000.0
         metrics['backend_processing_time_ms'] = elapsed_ms
+        metrics['execution_time_seconds'] = elapsed_sec
 
         # 5. Return Clean API Contract (Zero Ground-Truth Leaks)
         return {
@@ -282,7 +289,9 @@ class PredictionService:
             'status': 'success',
             'num_gps_observations': len(trajectory),
             'execution_time_ms': elapsed_ms,
+            'execution_time_seconds': elapsed_sec,
             'metrics': metrics,
             'predicted_route': result.observation_arc_ids,
+            'matched_sequence': result.observation_arc_ids,
             'map_data': geometry,
         }

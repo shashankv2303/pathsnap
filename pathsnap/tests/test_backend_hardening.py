@@ -40,9 +40,11 @@ def test_health_endpoint_readiness():
         data = res.json()
         assert data["status"] == "healthy"
         assert data["service"] == "PathSnap"
+        assert data["ready"] is True
         assert data["model_loaded"] is True
         assert data["mode"] == "development"
         assert data["trip_count"] == 10
+        assert data["trips_count"] == 10
         assert "timestamp" in data
 
 
@@ -53,6 +55,8 @@ def test_trips_endpoint_contract():
         assert res.status_code == 200
         data = res.json()
         assert "evaluation_trips" in data
+        assert "trips" in data
+        assert data["trips"] == data["evaluation_trips"]
         assert len(data["evaluation_trips"]) == 10
         assert "00000000" in data["evaluation_trips"]
         assert data["mode"] == "development"
@@ -140,6 +144,27 @@ def test_evaluator_mode_trip_discovery_and_missing_route(tmp_path):
     assert "00000015" in EVALUATOR_ALLOWLIST
 
 
+def test_evaluator_mode_rejects_student_folder():
+    """Verify evaluator mode strictly refuses to point to student development folders."""
+    dev_path = str(ROOT / "Student folder/student_test")
+    with pytest.raises(ValueError, match="PATHSNAP_MODE is set to 'evaluator', but PATHSNAP_TRIP_ROOT points to student development data"):
+        PredictionService(trip_root=dev_path, mode="evaluator")
+
+
+def test_environment_variables_consistency(monkeypatch):
+    """Verify PATHSNAP_MODEL_PATH and PATHSNAP_CONFIG_PATH environment variables."""
+    default_model = ROOT / "pathsnap/artifacts/deployment_model/model.joblib"
+    default_config = ROOT / "pathsnap/artifacts/deployment_model/model_config.json"
+
+    monkeypatch.setenv("PATHSNAP_MODEL_PATH", str(default_model))
+    monkeypatch.setenv("PATHSNAP_CONFIG_PATH", str(default_config))
+    monkeypatch.setenv("PATHSNAP_MODE", "development")
+
+    srv = PredictionService()
+    assert srv.is_ready()
+    assert srv.model_path == default_model.resolve()
+
+
 # ---------------------------------------------------------------------------
 # 4. Input Validation & Error Handling
 # ---------------------------------------------------------------------------
@@ -173,10 +198,13 @@ def test_full_prediction_and_all_metrics():
         assert data["status"] == "success"
         assert data["num_gps_observations"] > 0
         assert data["execution_time_ms"] > 0
+        assert data["execution_time_seconds"] > 0
         assert len(data["predicted_route"]) == data["num_gps_observations"]
+        assert data["matched_sequence"] == data["predicted_route"]
 
         metrics = data["metrics"]
         assert metrics["reference_available"] is True
+        assert metrics["execution_time_seconds"] > 0
         assert 0.80 <= metrics["pointwise_accuracy"] <= 1.0
         assert 0.90 <= metrics["continuity"] <= 1.0
         assert metrics["route_continuity"] == metrics["continuity"]
