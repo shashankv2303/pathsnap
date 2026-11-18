@@ -119,6 +119,30 @@ flowchart LR
    ```
    Open `http://localhost:8501` in a browser.
 
+The client displays live health, model readiness, mode and trip count before
+enabling reconstruction. It accepts `evaluation_trips` or `trips`, and
+`predicted_route` or `matched_sequence`. Missing metrics display `Unavailable`;
+zero values remain zero. Route edit distance is lower-is-better. Additional
+backend metrics are in Execution diagnostics.
+
+The sidebar prediction timeout defaults to 300 seconds and can be increased;
+connection timeout is 5 seconds. Health and trip discovery use a 10-second
+read timeout. A prediction receiving HTTP 503 is retried twice with 1.5-second
+pauses, then reports that the backend is busy. A timeout is never automatically
+retried because the original prediction may still be running. For 404, refresh
+the page to rediscover trips; 422 indicates rejected request settings.
+
+Map coordinates arrive as `[longitude, latitude]` and are converted on the
+client to Folium's `[latitude, longitude]`. Blue GPS markers and red predicted
+route segments have independent layer toggles. Route breaks remain separate;
+empty geometry is handled without drawing a map. No reference geometry is
+loaded or displayed. Laptop 2 needs only the UI script and client dependencies.
+
+If Laptop 1 is unreachable, verify its local `/health`, Uvicorn's `0.0.0.0`
+binding, and inbound TCP 8000 on its active Windows network profile. Campus
+Wi-Fi may isolate clients; use a shared hotspot if necessary. Do not change
+firewall settings on Laptop 2 to work around an unreachable backend.
+
 ---
 
 ## 4. API Endpoints & Contract Specification
@@ -227,6 +251,25 @@ Returns the allowlisted evaluation trips (provides both `evaluation_trips` and `
 | **Server-Side Scoring (`evaluate.py`)** | **VERIFIED** | Pointwise accuracy, continuity, candidate miss rate, edit distance |
 | **Anti-Leakage Protection** | **VERIFIED** | Zero reference routes or ground truth paths in response payload |
 | **Streamlit Client Compatibility** | **VERIFIED** | Tested via `AppTest`; displays metrics, map, and error states |
-| **Automated Test Suite** | **VERIFIED** | **29/29 tests passed** across API, hardening, integration, and UI |
-| **Physical LAN Verification** | *Pending* | Requires connecting two physical laptops to the same Wi-Fi network |
+| **Automated Test Suite** | **VERIFIED** | `python -m pytest pathsnap/tests -v`: 46 passed, 0 failed, 0 skipped; one upstream TestClient deprecation warning |
+| **Physical LAN Verification** | **VERIFIED (development data)** | Laptop 2 reached Laptop 1 health, trips, predictions for 00000000 and 00000007, and rendered the live Folium map in Chromium |
 | **Reserved Evaluator Data Delivery** | *Pending* | Requires hackathon judges to provide the confidential evaluation folder |
+
+### Laptop 2 integration evidence (18 November 2026)
+
+The integration branch starts at backend commit `458d973` on
+`origin/phase5-laptop1-backend-hardening`; backend code, model and decoder were
+not changed or rebuilt. The full suite includes 18 frontend tests for health,
+trip fallback/discovery, errors, bounded retries, optional metrics, coordinates,
+empty geometry and client isolation. No evaluator labels were added to Git.
+
+Unmocked local Streamlit-to-Uvicorn HTTP checks passed for development trips
+00000000 and 00000007. Separate physical LAN checks from Laptop 2 to the actual
+Laptop 1 server passed for health (ready/model_loaded true, development mode,
+10 trips), trip discovery and both predictions. The browser rendered the live
+GPS/route map and OpenStreetMap tiles with zero console errors. Coordinates
+were checked as longitude/latitude at the API and latitude/longitude in Folium.
+The first LAN attempt timed out; a retry after the user checked Laptop 1 worked.
+Laptop 1 console logging is not directly observable from Laptop 2; confirmation
+must be made on Laptop 1. This is development testing, not official evaluator
+testing. Machine-specific LAN addresses remain runtime settings.

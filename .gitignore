@@ -44,6 +44,10 @@ problem_statement_audio.wav
 *.key
 *.pem
 
+# Local browser verification artifacts
+.playwright-cli/
+output/playwright/
+
 # Private Evaluator Ground-Truth Data (Laptop 1 Server-Side Only; Never Commit)
 evaluator/
 evaluator_data/
