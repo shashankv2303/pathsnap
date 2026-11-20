@@ -1,0 +1,23 @@
+{
+  "model": "pathsnap/artifacts/deployment_model/model.joblib",
+  "decoder_config": "results/hmm-viterbi/decoder_config.json",
+  "decoder": {
+    "beta_m": 10.0,
+    "max_gap_s": 10.0,
+    "max_speed_mps": 55.0,
+    "distance_slack_m": 35.0,
+    "reverse_jitter_m": 10.0
+  },
+  "trips": [
+    "00000015",
+    "00000017",
+    "00000023",
+    "00000030",
+    "00000049",
+    "00000059",
+    "00000067",
+    "00000073",
+    "00000087",
+    "00000094"
+  ]
+}

@@ -1,0 +1,3 @@
+method,trips,observations,aligned_observations,mean_per_trip_accuracy,pooled_accuracy,mean_continuity,mean_normalized_route_edit_distance,total_breaks,mean_seconds_per_trip
+classifier_only,10,19160,19131,0.8397865490465352,0.8216507239558831,0.9140309557472086,0.5289165121620789,1789,1.5800003896000816
+classifier_plus_hmm,10,19160,19131,0.9027168633172682,0.879567194605614,0.9981093770784891,0.18155021630807322,68,2.635698741499982

@@ -6,8 +6,10 @@ It provides a FastAPI backend on Laptop 1 and a Streamlit evaluator dashboard
 on Laptop 2 for the PES University ML hackathon.
 
 Phase 5 is implemented and merged into `main`. Automated tests and physical
-two-laptop integration have passed with student-test development data.
-Official evaluator testing remains pending the organizers' private dataset.
+two-laptop integration have passed. The frozen system has been scored on the
+ten reserved evaluator trips: HMM/Viterbi decoding reaches about 90-91% mean
+per-trip accuracy. See [Results](#results) and the team's technical report,
+[113.pdf](113.pdf).
 
 ## Architecture
 
@@ -225,16 +227,76 @@ selected its tuned classifier using trip-grouped cross-validation.
 See [the model documentation](pathsnap/models/README.md) and
 [the recorded Phase 3/4 results](results/phase3-phase4-summary.md).
 
-The recorded Phase 4 comparison reports mean accuracy of 83.88% for classifier
-argmax versus 89.95% with Viterbi, and continuity of 91.40% versus 99.81%, across
-ten student-test trips. Those historical figures belong to that experiment;
-they are not fresh deployment-model scores or official evaluator scores.
-
 Dashboard results are live, per-selected-trip metrics computed by the backend.
 Development mode reports student-test results by default. Pointwise accuracy
 uses reliable reference-aligned observations; continuity uses eligible
 transitions. Candidate miss rate and route edit distance have different
 denominators and meanings; do not interpret them as accuracy.
+
+## Results
+
+Accuracy counts GPS points that could be aligned to the reference route within
+50 m. **Mean per trip** gives each trip equal weight; **pooled** gives each
+scorable GPS point equal weight. Evaluator trips were scored only after the
+model and decoder settings were frozen, and those scores were not used to change
+anything.
+
+### Recorded results (team report)
+
+From the full-search tuned classifier with HMM/Viterbi decoding, as reported in
+[113.pdf](113.pdf) and [the model documentation](pathsnap/models/README.md):
+
+| Split | Trips | Scorable points | Mean per trip | Pooled |
+|---|---:|---:|---:|---:|
+| Training | 80 | 178,963 | 87.68% | 87.82% |
+| Validation, five held-out folds | 80 | 178,963 | 87.18% | 86.88% |
+| Student test | 10 | 19,131 | 89.95% | 87.83% |
+| Evaluator test | 10 | 17,708 | **90.11%** | **84.83%** |
+
+On student test, Viterbi raised mean per-trip accuracy from 83.88% (classifier
+only) to 89.95%, continuity from 91.40% to 99.81%, and lowered normalised route
+edit distance from 0.529 to 0.181.
+
+### Re-run on current `main` (20 November 2026)
+
+Both saved models were re-scored with
+`pathsnap.decoding.evaluate_partition` on macOS. The deployment model is the one
+the API serves by default.
+
+| Model | Split | Classifier only, mean | With Viterbi, mean | With Viterbi, pooled | Continuity | Route edit distance |
+|---|---|---:|---:|---:|---:|---:|
+| Tuned (`results/bayesian-full/`) | Student test | 83.98% | 90.27% | 87.96% | 99.81% | 0.182 |
+| Tuned (`results/bayesian-full/`) | Evaluator test | 82.92% | 90.81% | 85.97% | 99.86% | 0.211 |
+| Deployment (served by API) | Student test | 83.87% | 90.28% | 88.16% | 99.81% | 0.168 |
+| Deployment (served by API) | Evaluator test | 83.00% | **91.10%** | **86.52%** | 99.86% | 0.200 |
+
+Evaluator test by trip, with Viterbi:
+
+| Trip | GPS points | Scorable | Tuned model | Deployment model |
+|---|---:|---:|---:|---:|
+| `00000015` | 6,854 | 6,833 | 73.15% | 74.33% |
+| `00000017` | 1,346 | 1,346 | 94.06% | 94.58% |
+| `00000023` | 458 | 458 | 94.98% | 94.98% |
+| `00000030` | 654 | 654 | 85.78% | 86.70% |
+| `00000049` | 2,642 | 2,642 | 99.74% | 99.74% |
+| `00000059` | 1,031 | 1,031 | 97.58% | 97.48% |
+| `00000067` | 916 | 916 | 85.04% | 85.26% |
+| `00000073` | 1,144 | 1,144 | 98.51% | 98.25% |
+| `00000087` | 1,399 | 1,399 | 99.43% | 99.43% |
+| `00000094` | 3,230 | 1,285 | 79.84% | 80.23% |
+
+Trip `00000015` is the largest and weakest, which is why pooled accuracy is lower
+than the mean per trip. Trip `00000094` has only 1,285 of 3,230 points within 50 m
+of its reference route.
+
+The re-run uses the same code, models, decoder settings and scorable points as
+the recorded run, but its tuned-model figures are slightly higher (for example
+90.27% vs 89.95% on student test). The classifier makes a few different choices
+between near-equal candidates on this machine (for example 1 of 768 points on
+trip `00000065`), and Viterbi can carry such a change along the route; that trip
+moved from 79.95% to 83.07%. Results are identical between repeated runs on the
+same machine. The recorded figures are those in the report; the re-run files
+are in `results/evaluator-test/` and `results/student-test/`.
 
 ## Repository layout
 
@@ -257,7 +319,8 @@ pathsnap/
   reports/                Experiment reports and historical audits
   tests/                  Unit, API, integration and UI tests
 Student folder/           Permitted training and student-test trip files
-results/                  Saved tuning and route-decoding experiments
+results/                  Tuning, route decoding, and evaluator/student-test scoring
+113.pdf                   Team technical report
 docs/                     Supplied PDFs/video and current deployment guide
 pathsnap_analysis/        Design and problem-analysis documents
 reference_analysis/       Course-reference analysis
@@ -278,7 +341,8 @@ Last verified on 18 November 2026:
   predictions for `00000000` and `00000007`.
 - Chromium rendered live GPS/route maps and map tiles; Laptop 1 logs supplied
   by the user confirmed the client requests, timings and HMM execution.
-- Official evaluator testing remains pending dataset availability.
+- 20 November 2026: the 46 tests passed again, and both saved models were
+  scored on all ten evaluator trips (see [Results](#results)).
 
 These are recorded verification results, not a guarantee of current LAN
 reachability. Restart both services and check health after changing networks.
@@ -299,6 +363,17 @@ git lfs pull --include="pathsnap/data/train_candidates.joblib,pathsnap/data/stud
 python -m pathsnap.experiments.full_bayesian_optimization --trials 8 --out results/bayesian-new
 python -m pathsnap.decoding.evaluate --model results/bayesian-new/tuned_model.joblib --out results/hmm-new
 ```
+
+To score a frozen model and decoder on a trip folder that includes reference
+routes (for example the private evaluator trips on Laptop 1):
+
+```powershell
+python -m pathsnap.decoding.evaluate_partition --trip-root C:\PathSnapPrivate\evaluator --model pathsnap/artifacts/deployment_model/model.joblib --out results/evaluator-new
+```
+
+It predicts each trip before reading its reference route and writes
+`per_trip.csv`, `summary.csv` and predictions. It refuses to overwrite an
+existing output folder.
 
 The original saved runs remain under `results/bayesian-full/` and
 `results/hmm-viterbi/`. The deployment rebuild entry point is

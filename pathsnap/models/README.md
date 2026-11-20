@@ -109,6 +109,11 @@ its held-out trips with settings already selected during development, so it
 is a post-tuning estimate. The evaluator results come from a separate final
 run with the frozen model and decoder.
 
+A later re-run on current `main` gives slightly different tuned-model figures
+(90.27% student test and 90.81% evaluator test, mean per trip) because a few
+near-tie candidate choices differ between machines. It also scores the
+deployment model served by the API. See [Results](../../README.md#results).
+
 ## Reproduce the comparison
 
 From the repository root, with the candidate datasets and dependencies available:
